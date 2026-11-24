@@ -193,6 +193,7 @@ fn worker(cmds: Receiver<Cmd>, events: Sender<Event>, ctx: eframe::egui::Context
     // interface drops the movement when another command (the position query) arrives.
     let mut jogging: Option<Jog> = None;
     let mut last_poll = Instant::now() - Duration::from_secs(1);
+    let mut jog_query_due: Option<Instant> = None;
     loop {
         match cmds.recv_timeout(Duration::from_millis(40)) {
             Ok(cmd) => {
@@ -255,10 +256,21 @@ fn worker(cmds: Receiver<Cmd>, events: Sender<Event>, ctx: eframe::egui::Context
         if last_poll.elapsed() >= Duration::from_millis(500) {
             last_poll = Instant::now();
             let bytes = match jogging {
-                Some(j) => d.jog(j),
+                Some(j) => {
+                    jog_query_due = Some(Instant::now() + Duration::from_millis(250));
+                    d.jog(j)
+                }
                 None => d.poll(),
             };
             if let Err(e) = p.write(&bytes) {
+                fail(&mut link, &send, e);
+                continue;
+            }
+        }
+        // While jogging, ask for the position between two jog repeats so the needle follows.
+        if jogging.is_some() && jog_query_due.is_some_and(|t| Instant::now() >= t) {
+            jog_query_due = None;
+            if let Err(e) = p.write(&d.poll()) {
                 fail(&mut link, &send, e);
                 continue;
             }
