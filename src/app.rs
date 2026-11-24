@@ -79,6 +79,12 @@ impl SettingsTab {
     }
 }
 
+/// Result of a background QRZ.com request.
+enum QrzMsg {
+    Lookup(Result<crate::qrz::Station, String>),
+    Test(Result<(), String>),
+}
+
 pub struct App {
     cfg: Config,
     tx: Sender<Cmd>,
@@ -102,6 +108,12 @@ pub struct App {
     update_rx: Option<std::sync::mpsc::Receiver<UpdateStatus>>,
     install_rx: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
     update_error: Option<String>,
+    qrz_rx: Option<std::sync::mpsc::Receiver<QrzMsg>>,
+    /// Callsign being looked up, with the elevation to use once it is found.
+    qrz_busy: Option<(String, Option<f64>)>,
+    qrz_cache: std::collections::HashMap<String, crate::qrz::Station>,
+    qrz_error: Option<String>,
+    qrz_test: Option<Result<(), String>>,
     started: Instant,
     next_try: Instant,
     /// Raw rotor azimuth / elevation as reported (before the heading offset is removed).
@@ -154,6 +166,11 @@ impl App {
             update_rx: None,
             install_rx: None,
             update_error: None,
+            qrz_rx: None,
+            qrz_busy: None,
+            qrz_cache: std::collections::HashMap::new(),
+            qrz_error: None,
+            qrz_test: None,
             started: Instant::now(),
             next_try: Instant::now(),
             heading: None,
@@ -196,6 +213,59 @@ impl App {
         });
         self.install_rx = Some(rx);
         self.update_error = None;
+    }
+
+    fn start_qrz(&mut self, ctx: &egui::Context, call: Option<(String, Option<f64>)>) {
+        let (user, pass) = (self.cfg.qrz_user.clone(), self.cfg.qrz_pass.clone());
+        let (tx, rx) = std::sync::mpsc::channel();
+        let c = ctx.clone();
+        self.qrz_error = None;
+        match call {
+            Some((call, el)) => {
+                self.qrz_busy = Some((call.clone(), el));
+                std::thread::spawn(move || {
+                    let _ = tx.send(QrzMsg::Lookup(crate::qrz::lookup(&user, &pass, &call)));
+                    c.request_repaint();
+                });
+            }
+            None => {
+                self.qrz_test = None;
+                std::thread::spawn(move || {
+                    let _ = tx.send(QrzMsg::Test(crate::qrz::test(&user, &pass)));
+                    c.request_repaint();
+                });
+            }
+        }
+        self.qrz_rx = Some(rx);
+    }
+
+    fn poll_qrz(&mut self) {
+        let Some(rx) = &self.qrz_rx else { return };
+        let Ok(msg) = rx.try_recv() else { return };
+        self.qrz_rx = None;
+        match msg {
+            QrzMsg::Test(r) => self.qrz_test = Some(r),
+            QrzMsg::Lookup(r) => {
+                let busy = self.qrz_busy.take();
+                match r {
+                    Ok(st) => {
+                        let el = busy.and_then(|(_, el)| el);
+                        match self.bearing_to_point((st.lat, st.lon)) {
+                            Some((b, _)) => self.go(b, el),
+                            None => self.qrz_error = Some("Set your own grid square in Settings → Location".into()),
+                        }
+                        self.qrz_cache.insert(st.call.clone(), st);
+                    }
+                    Err(e) => self.qrz_error = Some(e),
+                }
+            }
+        }
+    }
+
+    /// Bearing and distance (km) from my grid square to a latitude / longitude.
+    fn bearing_to_point(&self, to: (f64, f64)) -> Option<(f64, f64)> {
+        let (brg, dist) = grid::bearing_distance(grid::to_latlon(&self.cfg.my_grid)?, to);
+        Some(if self.cfg.long_path { ((brg + 180.0) % 360.0, 2.0 * std::f64::consts::PI * 6371.0 - dist) } else { (brg, dist) })
     }
 
     fn poll_update(&mut self) {
@@ -861,9 +931,12 @@ impl App {
     fn manual_row(&mut self, ui: &mut egui::Ui) {
         let p = theme::pal(ui.visuals());
         ui.horizontal(|ui| {
-            let hint = if self.cfg.has_elevation() { "Grid or bearing, e.g. JO50 or 270 [elevation]" } else { "Grid square or bearing, e.g. JO50 or 270" };
+            let hint = if self.cfg.has_elevation() { "Callsign, grid or bearing, e.g. W1AW, JO50 or 270 [elevation]" } else { "Callsign, grid square or bearing, e.g. W1AW" };
             let go_w = 64.0;
             let r = ui.add(egui::TextEdit::singleline(&mut self.manual).desired_width(ui.available_width() - go_w - ui.spacing().item_spacing.x - 2.0).hint_text(hint).margin(egui::Margin::symmetric(10, 7)));
+            if r.changed() {
+                self.qrz_error = None;
+            }
             let go = ui.add_enabled(self.heading.is_some(), primary_button("Go", &p).min_size(vec2(go_w, 32.0))).clicked()
                 || (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && self.heading.is_some());
             let txt = self.manual.clone();
@@ -873,12 +946,35 @@ impl App {
             let brg = first.parse::<f64>().ok().map(|b| (b, None)).or_else(|| self.bearing_to(first).map(|(b, d)| (b, Some(d))));
             if go && let Some((b, _)) = brg {
                 self.go(b, el);
+            } else if go && crate::qrz::looks_like_callsign(first) && self.qrz_busy.is_none() {
+                let call = first.to_uppercase();
+                if let Some(st) = self.qrz_cache.get(&call).cloned() {
+                    match self.bearing_to_point((st.lat, st.lon)) {
+                        Some((b, _)) => self.go(b, el),
+                        None => self.qrz_error = Some("Set your own grid square in Settings → Location".into()),
+                    }
+                } else if self.cfg.qrz_user.trim().is_empty() || self.cfg.qrz_pass.is_empty() {
+                    self.qrz_error = Some("Add your QRZ.com login in Settings → Location to look up callsigns".into());
+                } else {
+                    self.start_qrz(&ui.ctx().clone(), Some((call, el)));
+                }
             }
         });
         let txt = self.manual.clone();
         let first = txt.split_whitespace().next().unwrap_or("");
+        let call_info = self.qrz_cache.get(&first.to_uppercase()).cloned().and_then(|s| self.bearing_to_point((s.lat, s.lon)).map(|(b, d)| (s, b, d)));
         ui.horizontal(|ui| {
             match (first.parse::<f64>().ok(), self.bearing_to(first)) {
+                _ if self.qrz_busy.is_some() => ui.label(RichText::new("Looking up the callsign on QRZ.com…").size(12.5).color(p.dim)),
+                _ if self.qrz_error.is_some() => ui.label(RichText::new(self.qrz_error.clone().unwrap_or_default()).size(12.5).color(p.red)),
+                (None, None) if call_info.is_some() => {
+                    let (s, b, d) = call_info.unwrap();
+                    let who = if s.name.is_empty() { s.call.clone() } else { format!("{} ({})", s.call, s.name) };
+                    ui.label(RichText::new(format!("{who} → {b:.0}°  ·  {}", self.dist(d))).size(12.5).color(p.dim))
+                }
+                (None, None) if crate::qrz::looks_like_callsign(first) && grid::to_latlon(&self.cfg.my_grid).is_some() => {
+                    ui.label(RichText::new(format!("Press Go to look up {} on QRZ.com", first.to_uppercase())).size(12.5).color(p.dim))
+                }
                 (Some(b), _) => ui.label(RichText::new(format!("Bearing {b:.0}°")).size(12.5).color(p.dim)),
                 (None, Some((b, d))) => ui.label(RichText::new(format!("{} → {b:.0}°  ·  {}", first.to_uppercase(), self.dist(d))).size(12.5).color(p.dim)),
                 (None, None) if first.is_empty() => ui.label(RichText::new("Click the dial, a preset, or type a destination").size(12.5).color(p.dim)),
@@ -980,6 +1076,32 @@ impl App {
                             ui.label(RichText::new("Turn the other way round the globe").color(p.dim));
                         });
                     });
+                });
+                card(ui, p, "QRZ.com callsign lookup", |ui| {
+                    ui.label(RichText::new("Type a callsign in the Go box and the rotor turns toward its QRZ.com location. Needs a QRZ.com account with the XML data subscription.").color(p.dim));
+                    ui.add_space(6.0);
+                    form(ui, "qrz", |ui| {
+                        field(ui, "Username", |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut self.cfg.qrz_user).desired_width(200.0).hint_text("your callsign"));
+                        });
+                        field(ui, "Password", |ui| {
+                            ui.add(egui::TextEdit::singleline(&mut self.cfg.qrz_pass).password(true).desired_width(200.0));
+                        });
+                        field(ui, "Check", |ui| {
+                            let busy = self.qrz_rx.is_some();
+                            if ui.add_enabled(!busy && !self.cfg.qrz_user.trim().is_empty() && !self.cfg.qrz_pass.is_empty(), egui::Button::new("Test login")).clicked() {
+                                let ctx = ui.ctx().clone();
+                                self.start_qrz(&ctx, None);
+                            }
+                            match &self.qrz_test {
+                                _ if busy => ui.label(RichText::new("Checking…").color(p.dim)),
+                                Some(Ok(())) => ui.label(RichText::new("Login works").color(p.green)),
+                                Some(Err(e)) => ui.label(RichText::new(e.as_str()).color(p.red)),
+                                None => ui.label(""),
+                            };
+                        });
+                    });
+                    note(ui, p, p.dim, "The password is saved in the settings file as plain text; it is only sent to QRZ.com.");
                 });
             }
             SettingsTab::Presets => {
@@ -1617,6 +1739,7 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         self.poll();
         self.poll_update();
+        self.poll_qrz();
         self.sync_server(&ctx);
         self.auto_reconnect(&ctx);
         if self.first_frame {

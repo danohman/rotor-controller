@@ -6,6 +6,7 @@ mod grid;
 mod icon;
 mod drivers;
 mod link;
+mod qrz;
 mod server;
 mod theme;
 mod update;

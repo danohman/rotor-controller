@@ -22,6 +22,8 @@
   is a small fixed-size window with the rose, the controls and the presets.
 - **5 preset buttons** with your own labels. Each turns the antenna toward a grid square, computed from your own grid square.
   Right-click a preset to edit it.
+- **Callsign lookup.** Type a callsign in the Go box and the rotor turns toward its location from QRZ.com (needs your own
+  QRZ.com login with the XML data subscription, entered in Settings → Location).
 - **Overlap handling** for 450 degree rotors such as the Yaesu G-800DXA: the program picks the way round that stays within the
   rotor's travel and shows "(overlap)" past 360 degrees.
 - **Hold-to-run jog buttons**; the CW / CCW buttons and the dial ring pulse while the antenna is moving.

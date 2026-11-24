@@ -45,6 +45,9 @@ pub struct Config {
     pub miles: bool,
     /// Look for a newer release on GitHub when the program starts.
     pub check_updates: bool,
+    /// QRZ.com login used to look up callsigns (stored in the config file as plain text).
+    pub qrz_user: String,
+    pub qrz_pass: String,
     pub presets: Vec<Preset>,
 }
 
@@ -72,6 +75,8 @@ impl Default for Config {
             dark_mode: true,
             miles: false,
             check_updates: true,
+            qrz_user: String::new(),
+            qrz_pass: String::new(),
             presets: vec![p("EU", "JO50"), p("Japan", "PM95"), p("W1", "FN42"), p("W6", "CM97"), p("VK", "QF22")],
         }
     }
