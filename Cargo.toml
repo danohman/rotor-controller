@@ -1,0 +1,31 @@
+[package]
+name = "rotor-controller"
+version = "1.0.0-beta"
+edition = "2024"
+description = "Cross-platform antenna rotor controller (GS-232 protocol)"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+anyhow = "1"
+crossbeam-channel = "0.5"
+directories = "6"
+eframe = { version = "0.37", features = ["persistence"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serialport = "4.10"
+ureq = "3"
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging"] }
+
+[build-dependencies]
+winresource = "0.1"
+image = { version = "0.25", default-features = false, features = ["png", "ico"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
