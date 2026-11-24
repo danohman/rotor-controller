@@ -6,7 +6,7 @@
 
 <p align="center">
   A modern, cross-platform (Windows, Linux, macOS) antenna rotor controller written in Rust.<br>
-  Version 1.0.0-beta
+  Version 1.0.0
 </p>
 
 <p align="center">
