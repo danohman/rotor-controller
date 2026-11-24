@@ -1,6 +1,6 @@
 [package]
 name = "rotor-controller"
-version = "1.0.0"
+version = "1.0.1-beta"
 edition = "2024"
 description = "Cross-platform antenna rotor controller (GS-232 protocol)"
 license = "GPL-3.0-or-later"
