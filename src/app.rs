@@ -914,7 +914,20 @@ impl App {
             String::new()
         };
         if !sub.is_empty() {
-            painter.text(c + vec2(0.0, r * 0.45 + size / 11.0), Align2::CENTER_CENTER, sub, FontId::proportional(12.0), p.amber);
+            let pos = c + vec2(0.0, r * 0.45 + size / 11.0);
+            if sub == "overlap" {
+                // In the middle of the rose, above the heading number so that stays visible.
+                let sub = "OVERLAP".to_string();
+                let pos = c + vec2(0.0, r * 0.17);
+                // Red chip; the text color follows the theme so it stays readable.
+                let fg = if p.dark { Color32::BLACK } else { Color32::WHITE };
+                let galley = painter.layout_no_wrap(sub, theme::bold(12.0), fg);
+                let chip = egui::Rect::from_center_size(pos, galley.size() + vec2(16.0, 6.0));
+                painter.rect_filled(chip, chip.height() / 2.0, p.red);
+                painter.galley(chip.center() - galley.size() / 2.0, galley, fg);
+            } else {
+                painter.text(pos, Align2::CENTER_CENTER, sub, FontId::proportional(12.0), p.amber);
+            }
         }
         if resp.hovered() && self.heading.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1443,10 +1456,28 @@ impl App {
         });
     }
 
+    /// Remember where the main window is in the current mode (not while a mode switch is settling).
+    fn track_window_pos(&mut self, ctx: &egui::Context) {
+        if self.fit_until.is_some() || ctx.input(|i| i.pointer.any_down()) {
+            return;
+        }
+        let Some(r) = ctx.input(|i| i.viewport().outer_rect) else { return };
+        let pos = [r.min.x.round(), r.min.y.round()];
+        let slot = if self.cfg.compact { &mut self.cfg.pos_compact } else { &mut self.cfg.pos_full };
+        if *slot != Some(pos) {
+            *slot = Some(pos);
+            self.cfg.save();
+        }
+    }
+
     fn set_compact(&mut self, ctx: &egui::Context, compact: bool) {
         self.cfg.compact = compact;
         self.cfg.save();
         apply_window_mode(ctx, compact);
+        // Go back to where this mode's window was last time.
+        if let Some([x, y]) = if compact { self.cfg.pos_compact } else { self.cfg.pos_full } {
+            ctx.send_viewport_cmd(egui::ViewportCommand::OuterPosition(Pos2::new(x, y)));
+        }
         self.fit_until = Some(Instant::now() + Duration::from_millis(1500));
     }
 }
@@ -1567,7 +1598,6 @@ fn jog_button(ui: &mut egui::Ui, size: egui::Vec2, text: &str, dir: Option<Dir>,
     let mut text_col = if danger { Color32::WHITE } else { p.text };
     if let Some(k) = pulse {
         fill = fill.lerp_to_gamma(hot, 0.35 + 0.65 * k);
-        ui.painter().rect_stroke(rect.expand(1.5 + 2.0 * k), 11.0, Stroke::new(1.5 + k, hot.gamma_multiply(0.3 + 0.5 * k)), egui::StrokeKind::Outside);
         text_col = if p.dark { Color32::BLACK } else { Color32::WHITE };
     }
     if held {
@@ -1740,6 +1770,7 @@ impl eframe::App for App {
         self.poll();
         self.poll_update();
         self.poll_qrz();
+        self.track_window_pos(&ctx);
         self.sync_server(&ctx);
         self.auto_reconnect(&ctx);
         if self.first_frame {

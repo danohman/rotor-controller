@@ -39,6 +39,9 @@ pub struct Config {
     pub span_scale: f64,
     pub long_path: bool,
     pub compact: bool,
+    /// Last window position (top-left) in each mode, restored when switching between them.
+    pub pos_full: Option<[f32; 2]>,
+    pub pos_compact: Option<[f32; 2]>,
     pub always_on_top: bool,
     pub dark_mode: bool,
     /// Show distances in miles instead of kilometers.
@@ -71,6 +74,8 @@ impl Default for Config {
             span_scale: 1.0,
             long_path: false,
             compact: false,
+            pos_full: None,
+            pos_compact: None,
             always_on_top: false,
             dark_mode: true,
             miles: false,
