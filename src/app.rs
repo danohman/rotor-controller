@@ -364,6 +364,9 @@ impl App {
                         self.heading = None;
                         self.el = None;
                     }
+                    if c.is_some() {
+                        self.send_speed();
+                    }
                     self.connected = c;
                 }
                 Event::Log(l) => self.log(l),
@@ -400,6 +403,13 @@ impl App {
                     self.log(format!("Cannot listen on port {port}: {e}"));
                 }
             }
+        }
+    }
+
+    /// Tell a GS-232 interface the chosen rotation speed (it keeps it until changed).
+    fn send_speed(&self) {
+        if self.cfg.protocol == Proto::Gs232 && self.cfg.speed > 0 {
+            let _ = self.tx.send(Cmd::Calibrate(Cal::Speed(self.cfg.speed)));
         }
     }
 
@@ -564,6 +574,15 @@ impl App {
         });
     }
 
+    /// The azimuth target while the rotor is still on its way; `None` once it has arrived.
+    fn pending_target(&self) -> Option<f64> {
+        let t = self.target?;
+        match self.compass_heading() {
+            Some(h) if ((t - h + 540.0).rem_euclid(360.0) - 180.0).abs() < 1.5 => None,
+            _ => Some(t),
+        }
+    }
+
     /// Right-hand column of the compact view: link dot, icons, stacked controls, target.
     fn compact_side(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         let p = theme::pal(ui.visuals());
@@ -592,7 +611,7 @@ impl App {
                 }
             } else if matches!(self.update, UpdateStatus::Available { .. }) {
                 self.update_chip(ui, &p, true);
-            } else if let Some(t) = self.target {
+            } else if let Some(t) = self.pending_target() {
                 ui.label(RichText::new(format!("Target {t:.0}°")).size(12.5).color(p.amber));
             } else {
                 ui.label(RichText::new("Click the rose").size(12.0).color(p.dim));
@@ -880,13 +899,14 @@ impl App {
             }
         }
         let hd = self.compass_heading();
-        if let (Some(t), Some(h)) = (self.target, hd) {
+        let pending = self.pending_target();
+        if let (Some(t), Some(h)) = (pending, hd) {
             let delta = (t - h + 540.0).rem_euclid(360.0) - 180.0;
             let steps = (delta.abs() / 3.0).ceil().max(1.0) as usize;
             let pts: Vec<Pos2> = (0..=steps).map(|k| pt(h + delta * k as f64 / steps as f64, r * 0.74)).collect();
             painter.add(egui::Shape::line(pts, Stroke::new(5.0, p.amber.gamma_multiply(0.55))));
         }
-        if let Some(t) = self.target {
+        if let Some(t) = pending {
             let a = pt(t, r + 1.0);
             let b1 = pt(t - 3.5, r - 14.0);
             let b2 = pt(t + 3.5, r - 14.0);
@@ -1347,6 +1367,16 @@ impl App {
                         self.cfg.offset = 0;
                     }
                 });
+                if self.cfg.protocol == Proto::Gs232 {
+                    field(ui, "Speed", |ui| {
+                        let before = self.cfg.speed;
+                        segmented(ui, p, &mut self.cfg.speed, &[(0, "Default"), (1, "1"), (2, "2"), (3, "3"), (4, "4")]);
+                        if self.cfg.speed != before {
+                            self.send_speed();
+                        }
+                        ui.label(RichText::new("X1 slowest to X4 fastest; not all rotors respond").color(p.dim));
+                    });
+                }
                 field(ui, "Span scale", |ui| {
                     ui.add(egui::DragValue::new(&mut self.cfg.span_scale).range(0.5..=2.0).speed(0.001).fixed_decimals(4));
                     if ui.small_button("Reset").clicked() {

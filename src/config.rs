@@ -37,6 +37,8 @@ pub struct Config {
     pub offset: i16,
     /// Multiplier applied to the interface azimuth (corrects an interface whose full scale is wrong).
     pub span_scale: f64,
+    /// GS-232 rotation speed 1 (slowest) to 4 (fastest); 0 leaves the interface as it is.
+    pub speed: u8,
     pub long_path: bool,
     pub compact: bool,
     /// Last window position (top-left) in each mode, restored when switching between them.
@@ -72,6 +74,7 @@ impl Default for Config {
             max_travel: 450,
             offset: 0,
             span_scale: 1.0,
+            speed: 0,
             long_path: false,
             compact: false,
             pos_full: None,

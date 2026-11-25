@@ -64,6 +64,7 @@ impl Driver for Gs232 {
             Cal::Range360 => b"P36\x0d".to_vec(),
             Cal::Range450 => b"P45\x0d".to_vec(),
             Cal::ToggleStart => b"Z\x0d".to_vec(),
+            Cal::Speed(n) => format!("X{}\r", n.clamp(1, 4)).into_bytes(),
         })
     }
 

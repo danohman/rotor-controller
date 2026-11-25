@@ -84,6 +84,8 @@ pub enum Cal {
     Range360,
     Range450,
     ToggleStart,
+    /// Rotation speed 1 (slowest) to 4 (fastest), GS-232 `X1`..`X4`.
+    Speed(u8),
 }
 
 pub enum Reply {
