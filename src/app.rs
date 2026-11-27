@@ -411,6 +411,8 @@ impl App {
         if self.cfg.protocol == Proto::Gs232 && self.cfg.speed > 0 {
             let _ = self.tx.send(Cmd::Calibrate(Cal::Speed(self.cfg.speed)));
         }
+        let ramp = if self.cfg.protocol == Proto::Gs232 { self.cfg.speed } else { 0 };
+        let _ = self.tx.send(Cmd::Ramp(ramp));
     }
 
     fn driver_cfg(&self) -> DriverCfg {
@@ -1374,7 +1376,7 @@ impl App {
                         if self.cfg.speed != before {
                             self.send_speed();
                         }
-                        ui.label(RichText::new("X1 slowest to X4 fastest; not all rotors respond").color(p.dim));
+                        ui.label(RichText::new("X1 slowest to X4 fastest; 2-4 ramps up and down: slowest for the first and last 10°").color(p.dim));
                     });
                 }
                 field(ui, "Span scale", |ui| {
