@@ -2872,7 +2872,7 @@ dependencies = [
 
 [[package]]
 name = "rotor-controller"
-version = "1.0.3-beta"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
