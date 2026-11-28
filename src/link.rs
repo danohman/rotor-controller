@@ -157,7 +157,7 @@ const POLL_MOVING: Duration = Duration::from_millis(200);
 const JOG_REPEAT: Duration = Duration::from_millis(500);
 
 /// Distance in degrees over which a move starts and ends at the slowest speed.
-const RAMP_DEG: f64 = 10.0;
+const RAMP_DEG: f64 = 20.0;
 /// A target counts as reached within this many degrees.
 const ARRIVED_DEG: f64 = 1.0;
 
@@ -439,10 +439,10 @@ mod tests {
     fn ramps_up_and_down() {
         let mut r = Ramp { selected: 4, ..Ramp::default() };
         assert_eq!(r.begin(Some(100.0), Some(200.0)), Some(1));
-        assert_eq!(r.update(103.0), None);
-        assert_eq!(r.update(111.0), Some(4));
+        assert_eq!(r.update(110.0), None);
+        assert_eq!(r.update(121.0), Some(4));
         assert_eq!(r.update(150.0), None);
-        assert_eq!(r.update(191.0), Some(1));
+        assert_eq!(r.update(181.0), Some(1));
         assert_eq!(r.update(199.5), Some(4)); // arrived: selected speed restored
         assert_eq!(r.update(200.0), None);
     }
