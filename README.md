@@ -32,6 +32,8 @@
 - **Auto-connect and reconnect** to the serial port.
 - **Guided calibration** for the Yaesu GS-232B (zero point, full scale, rotation range, north/south start) and a software
   span correction for interfaces whose full scale reads wrong.
+- **Speed ramp** (Yaesu GS-232, speed 2-4 in Settings → Rotor): each move starts and ends at the slowest speed for the first and
+  last 20 degrees, and runs at the selected speed in between.
 - **Sharing:** a built-in rotctld-compatible TCP server lets loggers and other programs steer the rotor.
 - **Update check** against this repository's releases (can be turned off); on Windows the executable can replace itself.
 - **Demo mode** (`--demo`) simulates a rotor, so everything can be tried without hardware.
